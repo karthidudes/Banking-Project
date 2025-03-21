@@ -17,10 +17,8 @@ class User(db.Model):
     balance = db.Column(db.Float, default=0.0)
 
 
-@app.before_first_request
-def create_tables():
+with app.app_context():
     db.create_all()
-
 
 @app.route('/')
 def home():

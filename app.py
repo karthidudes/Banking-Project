@@ -45,18 +45,15 @@ def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        balance = request.form['balance']
+        
+        balance = 0.0  
 
-        users = get_users()
-        if username in users:
-            flash("Username already exists! Try another one.", "danger")
-            return redirect(url_for('register'))
-
-        save_user(username, password, balance)
-        flash("Registration successful! You can now log in.", "success")
+        new_user = User(username=username, password=password, balance=balance)
+        db.session.add(new_user)
+        db.session.commit()
         return redirect(url_for('login'))
-
-    return render_template("register.html")
+    
+    return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

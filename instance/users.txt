@@ -1,0 +1,3 @@
+karthik,karthik,2000.0
+karthikeyan,12345,3000.0
+sarath,12345,1000.0

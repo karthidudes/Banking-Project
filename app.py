@@ -1,76 +1,68 @@
-import os
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, request, render_template, redirect, url_for, session, flash
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
 
-USER_FILE = "users.txt"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///banking.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Function to save user data
-def save_user(username, password, balance):
-    with open(USER_FILE, "a") as file:
-        file.write(f"{username},{password},{balance}\n")
+db = SQLAlchemy(app)
 
-# Function to read users from the file
-def get_users():
-    users = {}
-    if os.path.exists(USER_FILE):
-        with open(USER_FILE, "r") as file:
-            for line in file:
-                username, password, balance = line.strip().split(",")
-                users[username] = {"password": password, "balance": float(balance)}
-    return users
 
-# Function to update user balance
-def update_balance(username, new_balance):
-    users = get_users()
-    if username in users:
-        users[username]['balance'] = new_balance
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(100), nullable=False)
+    balance = db.Column(db.Float, default=0.0)
 
-        with open(USER_FILE, "w") as file:
-            for user, data in users.items():
-                file.write(f"{user},{data['password']},{data['balance']}\n")
 
-# Function to validate login credentials
-def validate_user(username, password):
-    users = get_users()
-    return username in users and users[username]['password'] == password
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
 
 @app.route('/')
 def home():
     return render_template("index.html")
 
-@app.route('/register', methods=['GET', 'POST'])
+
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
 
-        balance = 0.0  
-        with open("user.txt", "a") as file:
-            file.write(f"{username},{password},{balance}\n")
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return "Username already exists! Choose another one."
 
-        return redirect(url_for('login'))
+        new_user = User(username=username, password=password, balance=0.0)
+        db.session.add(new_user)
+        db.session.commit()
 
-    return render_template('register.html')
+        return redirect(url_for("login"))
 
-    
-    return render_template('register.html')
+    return render_template("register.html")
 
-@app.route('/login', methods=['GET', 'POST'])
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
 
-        if validate_user(username, password):
-            session['user'] = username
-            flash("Login successful!", "success")
-            return redirect(url_for('dashboard'))
+        # Retrieve user from database
+        user = User.query.filter_by(username=username, password=password).first()
+
+        if user:
+            session["user"] = user.username
+            return redirect(url_for("dashboard"))
         else:
-            flash("Invalid credentials! Try again.", "danger")
+            return "Invalid username or password"
 
     return render_template("login.html")
+
 
 @app.route('/dashboard')
 def dashboard():
@@ -79,10 +71,16 @@ def dashboard():
         return redirect(url_for('login'))
 
     username = session['user']
-    users = get_users()
-    balance = users[username]['balance']
     
-    return render_template("dashboard.html", username=username, balance=balance)
+    # Fetch user from the database
+    user = User.query.filter_by(username=username).first()
+    
+    if not user:
+        flash("User not found!", "danger")
+        return redirect(url_for('login'))
+
+    return render_template("dashboard.html", username=username, balance=user.balance)
+
 
 @app.route('/deposit', methods=['POST'])
 def deposit():
@@ -93,12 +91,14 @@ def deposit():
     username = session['user']
     amount = float(request.form['amount'])
 
-    users = get_users()
-    new_balance = users[username]['balance'] + amount
-    update_balance(username, new_balance)
-
-    flash(f"Deposited ₹{amount} successfully!", "success")
+    user = User.query.filter_by(username=username).first()
+    if user:
+        user.balance += amount
+        db.session.commit()
+        flash(f"Deposited ₹{amount} successfully!", "success")
+    
     return redirect(url_for('dashboard'))
+
 
 @app.route('/withdraw', methods=['POST'])
 def withdraw():
@@ -109,22 +109,25 @@ def withdraw():
     username = session['user']
     amount = float(request.form['amount'])
 
-    users = get_users()
+    user = User.query.filter_by(username=username).first()
     
-    if amount > users[username]['balance']:
-        flash("Insufficient balance!", "danger")
-    else:
-        new_balance = users[username]['balance'] - amount
-        update_balance(username, new_balance)
-        flash(f"Withdrawn ₹{amount} successfully!", "success")
+    if user:
+        if amount > user.balance:
+            flash("Insufficient balance!", "danger")
+        else:
+            user.balance -= amount
+            db.session.commit()
+            flash(f"Withdrawn ₹{amount} successfully!", "success")
 
     return redirect(url_for('dashboard'))
+
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     flash("Logged out successfully.", "success")
     return redirect(url_for('home'))
+
 
 if __name__ == '__main__':
     app.run(debug=True)

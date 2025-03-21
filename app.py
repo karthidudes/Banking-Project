@@ -45,13 +45,15 @@ def register():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        
-        balance = 0.0  
 
-        new_user = User(username=username, password=password, balance=balance)
-        db.session.add(new_user)
-        db.session.commit()
+        balance = 0.0  
+        with open("user.txt", "a") as file:
+            file.write(f"{username},{password},{balance}\n")
+
         return redirect(url_for('login'))
+
+    return render_template('register.html')
+
     
     return render_template('register.html')
 
